@@ -1,6 +1,6 @@
-"""Core risk metrics: Sharpe, Sortino, max drawdown.
+"""Core risk metrics: Sharpe, Sortino, max drawdown, hit rate.
 
-All functions operate on a return series already observed through time `t`.
+All functions operate on a return series already observed through time t.
 None of these helpers peek at future returns.
 """
 
@@ -24,10 +24,7 @@ def sharpe_ratio(
     risk_free: float = 0.0,
     periods_per_year: float = 252.0,
 ) -> float:
-    """Annualized Sharpe ratio of a periodic return series.
-
-    Uses sample std (ddof=1). Excess return is mean(r) - risk_free per period.
-    """
+    """Annualized Sharpe ratio of a periodic return series."""
     r = _as_float_array(returns)
     if r.size < 2:
         return float("nan")
@@ -45,10 +42,7 @@ def sortino_ratio(
     periods_per_year: float = 252.0,
     target: float | None = None,
 ) -> float:
-    """Annualized Sortino ratio using downside deviation below `target`.
-
-    Default target equals the per-period risk-free rate.
-    """
+    """Annualized Sortino ratio using downside deviation below target."""
     r = _as_float_array(returns)
     if r.size < 2:
         return float("nan")
@@ -64,16 +58,39 @@ def sortino_ratio(
 
 
 def max_drawdown(returns: ArrayLike) -> float:
-    """Maximum peak-to-trough drawdown of the cumulative equity curve.
-
-    Returns a non-positive number (e.g. -0.25 for a 25% drawdown).
-    Built from running equity of (1+r) products — no look-ahead.
-    """
+    """Max peak-to-trough drawdown of cumulative equity (non-positive)."""
     r = np.asarray(returns, dtype=float).ravel()
     r = r[np.isfinite(r)]
     if r.size == 0:
         return float("nan")
     equity = np.cumprod(1.0 + r)
     peak = np.maximum.accumulate(equity)
-    dd = equity / peak - 1.0
-    return float(np.min(dd))
+    return float(np.min(equity / peak - 1.0))
+
+
+def hit_rate(returns: ArrayLike) -> float:
+    """Fraction of periods with strictly positive returns."""
+    r = _as_float_array(returns)
+    if r.size == 0:
+        return float("nan")
+    return float(np.mean(r > 0.0))
+
+
+def summarize_returns(
+    returns: ArrayLike,
+    risk_free: float = 0.0,
+    periods_per_year: float = 252.0,
+    label: str = "portfolio",
+) -> dict[str, float | str]:
+    """Bundle core scalar metrics for reporting."""
+    r = _as_float_array(returns)
+    return {
+        "label": label,
+        "n": float(r.size),
+        "mean": float(np.mean(r)) if r.size else float("nan"),
+        "std": float(np.std(r, ddof=1)) if r.size > 1 else float("nan"),
+        "sharpe": sharpe_ratio(r, risk_free=risk_free, periods_per_year=periods_per_year),
+        "sortino": sortino_ratio(r, risk_free=risk_free, periods_per_year=periods_per_year),
+        "max_drawdown": max_drawdown(r),
+        "hit_rate": hit_rate(r),
+    }
